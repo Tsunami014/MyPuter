@@ -1,6 +1,6 @@
 // 0b0000
 int Writing = 50;
-int Reading = 50;
+int Reading = 51;
 
 int ReadAddr = 34;
 int RAddrSize = 4;
@@ -37,30 +37,33 @@ void writeData(int msg) {
     int thebit = masked_n >> k;
     digitalWrite(DataBus+k, thebit);
   }
-  digitalWrite(Writing, HIGH);
+  digitalWrite(Writing, LOW);
 }
-int readData() {
-  /*int data = 0;
+void readData() {
+  digitalWrite(Reading, LOW);
+}
+
+int getData() {
+  int data = 0;
   for(int k=0; k < DataSize; k++){
     data = data << 1;
     data += digitalRead(DataBus+k);
   }
-  return data;*/
-  digitalWrite(Reading, HIGH);
+  return data;
 }
 
 void Reset() {
-  digitalWrite(Writing, LOW);
-  digitalWrite(Reading, LOW);
+  digitalWrite(Writing, HIGH);
+  digitalWrite(Reading, HIGH);
   for (int i = DataBus; i < DataBus+DataSize; i++) {
     pinMode(i, INPUT);
   }
 
   /*for (int i = ReadAddr; i < ReadAddr+RAddrSize; i++) {
-    digitalWrite(i, LOW);
+    digitalWrite(i, HIGH);
   }
   for (int i = WriteAddr; i < WriteAddr+WAddrSize; i++) {
-    digitalWrite(i, LOW);
+    digitalWrite(i, HIGH);
   }*/
 }
 
@@ -87,10 +90,13 @@ void loop() {
   setwriteAddr(0);
   prev = prev + 1;
   writeData(prev);
-  delay(500);
+  delay(1000);
   Reset();
+  delay(1000);
   setreadAddr(0);
   readData();
   Serial.println(prev);
-  delay(500);
+  delay(1000);
+  Reset();
+  delay(1000);
 }
