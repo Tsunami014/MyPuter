@@ -10,21 +10,31 @@ int WAddrSize = 4;
 int DataBus = 40;
 int DataSize = 8;
 
-void setwriteAddr(int msg) {
+bool writing = false;
+bool reading = false;
+
+void setwriteAddr(int addr) {
   for(int k=0; k < WAddrSize; k++){
     int mask =  1 << k;
-    int masked_n = msg & mask;
+    int masked_n = addr & mask;
     int thebit = masked_n >> k;
     digitalWrite(WriteAddr+k, thebit);
   }
+  writing = true;
 }
-void setreadAddr(int msg) {
+void setreadAddr(int addr) {
   for(int k=0; k < RAddrSize; k++){
     int mask =  1 << k;
-    int masked_n = msg & mask;
+    int masked_n = addr & mask;
     int thebit = masked_n >> k;
     digitalWrite(ReadAddr+k, thebit);
   }
+  reading = true;
+}
+
+void Apply() {
+  digitalWrite(Writing, (uint8_t)(!writing));
+  digitalWrite(Reading, (uint8_t)(!reading));
 }
 
 void writeData(int msg) {
@@ -37,10 +47,6 @@ void writeData(int msg) {
     int thebit = masked_n >> k;
     digitalWrite(DataBus+k, thebit);
   }
-  digitalWrite(Writing, LOW);
-}
-void readData() {
-  digitalWrite(Reading, LOW);
 }
 
 int getData() {
@@ -58,6 +64,8 @@ void Reset() {
   for (int i = DataBus; i < DataBus+DataSize; i++) {
     pinMode(i, INPUT);
   }
+  writing = false;
+  reading = false;
 
   /*for (int i = ReadAddr; i < ReadAddr+RAddrSize; i++) {
     digitalWrite(i, HIGH);
@@ -90,13 +98,15 @@ void loop() {
   setwriteAddr(0);
   prev = prev + 1;
   writeData(prev);
-  delay(1000);
+  Apply();
+  delay(250);
   Reset();
-  delay(1000);
+  delay(250);
   setreadAddr(0);
-  readData();
+  setwriteAddr(1);
+  Apply();
   Serial.println(prev);
-  delay(1000);
+  delay(250);
   Reset();
-  delay(1000);
+  delay(250);
 }
