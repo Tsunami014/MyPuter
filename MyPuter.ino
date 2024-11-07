@@ -109,4 +109,11 @@ void loop() {
   delay(250);
   Reset();
   delay(250);
+  setreadAddr(1);
+  setwriteAddr(2);
+  Apply();
+  Serial.println(prev);
+  delay(250);
+  Reset();
+  delay(250);
 }
