@@ -16,7 +16,7 @@ int AddrSize = 8;
 bool writing = false;
 bool reading = false;
 
-int waitTime = 250;
+int waitTime = 100;
 
 void setwriteAddr(int addr) {
   for(int k=0; k < WAddrSize; k++){
@@ -108,6 +108,88 @@ void Reset() {
   }*/
 }
 
+int testnum;
+void unitTest(int A, int B, int op, int XpectedOut) {
+  testnum++;
+  setwriteAddr(1);
+  writeData(A);
+  Apply();
+  delay(waitTime);
+  Reset();
+  delay(waitTime);
+  setwriteAddr(2);
+  writeData(B);
+  Apply();
+  delay(waitTime);
+  Reset();
+  delay(waitTime);
+  setwriteAddr(0);
+  writeAddr(op);
+  Apply();
+  delay(waitTime);
+  Reset();
+  delay(waitTime);
+  setreadAddr(0);
+  setwriteAddr(3);
+  Apply();
+  delay(waitTime);
+  int datas[DataSize];
+  getDataBits(datas);
+  bool corr = true;
+  int xpecteds[DataSize];
+  Serial.print(testnum);
+  Serial.println(":");
+
+  Serial.print("< ");
+  for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
+    Serial.print(((1 << i) & A) >> i);
+    if (datas[i] != xpecteds[i]) {
+      corr = false;
+    }
+  }
+  Serial.println();
+  Serial.print("< ");
+  for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
+    Serial.print(((1 << i) & B) >> i);
+    if (datas[i] != xpecteds[i]) {
+      corr = false;
+    }
+  }
+  Serial.println();
+
+  Serial.print("> ");
+  for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
+    xpecteds[i] = ((1 << i) & XpectedOut) >> i;
+    if (datas[i] != xpecteds[i]) {
+      corr = false;
+    }
+    Serial.print(datas[i]);
+  }
+  Serial.println();
+  if (corr) {
+    Serial.print("+ ");
+  } else {
+    Serial.print("! ");
+  }
+  for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
+    Serial.print(xpecteds[i]);
+  }
+  Serial.println();
+  Reset();
+  delay(waitTime);
+}
+
+void AllUnitTests() {
+  // for (int i = 0;i < 16;i++) {
+  //   unitTest(i, 0, 0b00000, i);
+  // }
+  for (int i = 0;i < 8;i++) {
+    for (int j = 0;j < 8;j++) {
+      unitTest(i, j, 0b01001, i+j);
+    }
+  }
+}
+
 void setup() {
   Serial.begin(9600);
   // put your setup code here, to run once:
@@ -127,29 +209,7 @@ void setup() {
 
   Reset();
 
-  setwriteAddr(1);
-  writeData(0b010);
-  Apply();
-  delay(waitTime);
-  Reset();
-  delay(waitTime);
-  setwriteAddr(2);
-  writeData(0b101);
-  Apply();
-  delay(waitTime);
-  Reset();
-  delay(waitTime);
-  setwriteAddr(0);
-  writeAddr(0b01001);
-  Apply();
-  delay(waitTime);
-  Reset();
-  delay(waitTime);
-  setreadAddr(0);
-  setwriteAddr(3);
-  Apply();
-  delay(waitTime);
-  printData();
+  AllUnitTests();
 }
 
 void loop() {
