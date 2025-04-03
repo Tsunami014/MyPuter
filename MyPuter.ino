@@ -16,9 +16,9 @@ int AddrSize = 8;
 bool writing = false;
 bool reading = false;
 
-int waitTime = 100;
+int waitTime = 200;
 
-void setwriteAddr(int addr) {
+void setwriteAddr(uint8_t addr) {
   for(int k=0; k < WAddrSize; k++){
     int mask =  1 << k;
     int masked_n = addr & mask;
@@ -27,7 +27,7 @@ void setwriteAddr(int addr) {
   }
   writing = true;
 }
-void setreadAddr(int addr) {
+void setreadAddr(uint8_t addr) {
   for(int k=0; k < RAddrSize; k++){
     int mask =  1 << k;
     int masked_n = addr & mask;
@@ -37,7 +37,7 @@ void setreadAddr(int addr) {
   reading = true;
 }
 
-void writeAddr(int addr) {
+void writeAddr(uint8_t addr) {
   //Serial.print('>');
   for(int k=0; k < AddrSize; k++){
     int mask =  1 << k;
@@ -45,6 +45,7 @@ void writeAddr(int addr) {
     int thebit = masked_n >> k;
     //Serial.print(thebit);
     //Serial.print(',');
+    pinMode(AddrBus+k, OUTPUT);
     digitalWrite(AddrBus+k, thebit);
   }
   //Serial.println();
@@ -55,14 +56,12 @@ void Apply() {
   digitalWrite(Reading, (uint8_t)(!reading));
 }
 
-void writeData(int msg) {
-  for (int i = DataBus; i < DataBus+DataSize; i++) {
-    pinMode(i, OUTPUT);
-  }
+void writeData(uint8_t msg) {
   for(int k=0; k < DataSize; k++){
     int mask =  1 << k;
     int masked_n = msg & mask;
     int thebit = masked_n >> k;
+    pinMode(DataBus+k, OUTPUT);
     digitalWrite(DataBus+k, thebit);
   }
 }
@@ -95,6 +94,9 @@ void Reset() {
   digitalWrite(Writing, HIGH);
   digitalWrite(Reading, HIGH);
   for (int i = DataBus; i < DataBus+DataSize; i++) {
+    pinMode(i, INPUT);
+  }
+  for (int i = AddrBus; i < AddrBus+AddrSize; i++) {
     pinMode(i, INPUT);
   }
   writing = false;
@@ -135,25 +137,21 @@ void unitTest(int A, int B, int op, int XpectedOut) {
   delay(waitTime);
   int datas[DataSize];
   getDataBits(datas);
+
   bool corr = true;
   int xpecteds[DataSize];
+
   Serial.print(testnum);
   Serial.println(":");
 
   Serial.print("< ");
   for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
     Serial.print(((1 << i) & A) >> i);
-    if (datas[i] != xpecteds[i]) {
-      corr = false;
-    }
   }
   Serial.println();
   Serial.print("< ");
   for (int i=0;i<sizeof(datas)/sizeof(int);i++) {
     Serial.print(((1 << i) & B) >> i);
-    if (datas[i] != xpecteds[i]) {
-      corr = false;
-    }
   }
   Serial.println();
 
@@ -181,11 +179,11 @@ void unitTest(int A, int B, int op, int XpectedOut) {
 
 void AllUnitTests() {
   // for (int i = 0;i < 16;i++) {
-  //   unitTest(i, 0, 0b00000, i);
+  //   unitTest(i, 0, 0b000000, i);
   // }
   for (int i = 0;i < 8;i++) {
     for (int j = 0;j < 8;j++) {
-      unitTest(i, j, 0b01001, i+j);
+      unitTest(i, j, 0b101001, i+j);
     }
   }
 }
@@ -195,10 +193,6 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(Writing, OUTPUT);
   pinMode(Reading, OUTPUT);
-
-  for (int i = AddrBus; i < AddrBus+AddrSize; i++) {
-    pinMode(i, INPUT);
-  }
 
   for (int i = ReadAddr; i < ReadAddr+RAddrSize; i++) {
     pinMode(i, OUTPUT);
@@ -210,12 +204,13 @@ void setup() {
   Reset();
 
   AllUnitTests();
+
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
   /*setwriteAddr(0);
-  writeAddr(0b01001);
+  writeAddr(0b101);
   Apply();
   delay(waitTime);
   Reset();
