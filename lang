@@ -1,0 +1,5 @@
+file = (label_block)*
+label_block = label_name ":" statement_list "END"
+label_name = ~"[A-Z_][A-Z0-9_]*"i
+statement_list = (label_block / statement)*
+statement = ~"[^;]+" ";"
