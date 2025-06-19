@@ -1,59 +1,257 @@
 #!/bin/python3
 import argparse
+from dataclasses import dataclass
 import re
+from abc import ABC, abstractmethod
+from enum import IntEnum
 from parsimonious.grammar import Grammar
 
-from abc import ABC
-from typing import List
+REG_KEY = {
+    "NULL": -1,
+    "A": 0,
+    "B": 1,
+    "O": 2,
+    "OUT": 2
+}
+def parseNum(num):
+    num = num.lower()
+    if num[:2] == '0x':
+        return int(num, 16)
+    elif num[:2] == '0b':
+        return int(num, 2)
+    return int(num)
+
+class NodeTypes(IntEnum):
+    LABEL = -1
+    NOOP = 0
+    READWRITE = 1
+    ASSIGN = 2
+
+
+@dataclass(slots=True)
+class BasicOp:
+    read: int
+    write: int
+    addr: int
 
 class Node(ABC):
-    __slots__ = ['children']
-    children: List
+    __slots__ = ['typ']
+    typ: NodeTypes
+
+    @abstractmethod
+    def toBasic(self) -> list[BasicOp]:
+        pass
 
 class Label(Node):
-    __slots__ = ['name', 'children']
-    def __init__(self, node):
+    __slots__ = ['name', 'children', 'vars', 'allLabls']
+    typ = NodeTypes.LABEL
+    def __init__(self, node, parents):
         self.name = node.children[0].text
-        self.children = [parseTree(n.children[0]) for n in node.children[2].children]
+        if any(p.name == self.name for p in parents):
+            raise ValueError(
+                f'Multiple definitions of label {self.name}!'
+            )
+        self.vars = [var for i in parents for var in i.vars]
+        self.vars.extend(n.children[1].text for n in node.children[2].children)
+        self.children = []
+        self.allLabls = [self]
+        for n2 in node.children[3].children:
+            n = n2.children[0]
+            nme = n.expr_name
+            if nme == 'label_block':
+                self.allLabls.extend(Label(n, parents+[self]).allLabls)
+            elif nme == 'statement':
+                self.children.append(Statement(n.children[0], parents+[self]))
+            else:
+                raise ValueError(
+                    f'Node with name "{nme}" should not be here! Node text: {node.text}'
+                )
+    
+    def toBasic(self):
+        return [i for s in self.children for i in s.toBasic()]
     
     def __str__(self):
-        return f'Label {self.name}'
+        return f'Label {self.name} with vars {self.vars}'
     def __repr__(self):
         return f'<Label "{self.name}" with {len(self.children)} statements>'
 
-class Statement(Node):
-    __slots__ = ['txt', 'children']
-    def __init__(self, node):
-        self.txt = node.text[:-1]
-        self.children = []
-    
+class NOOP(Node):
+    typ = NodeTypes.NOOP
+    def __init__(self, _, __):
+        pass
+    def toBasic(self):
+        return [BasicOp(-1, -1, -1)]
     def __str__(self):
-        return 'Statement; '+self.txt
+        return 'NOOP'
     def __repr__(self):
-        return f'<Statement; {self.txt}>'
+        return '<NOOP>'
 
-PARSERS = {
-    'label_block': Label,
-    'statement': Statement
+class ReadWrite(Node):
+    __slots__ = ['fromR', 'toR', 'addr']
+    typ = NodeTypes.READWRITE
+    def __init__(self, node, _):
+        c = node.children[0]
+        toR, _, fromR = (i.text for i in c.children[0].children)
+        if node.expr_name == 'ReadWriteFrom':
+            fromR, toR = toR, fromR
+        
+        if fromR[1] in '0123456789':
+            self.fromR = parseNum(fromR[1:])
+        else:
+            self.fromR = REG_KEY[fromR.upper()[1:]]
+        if toR[1] in '0123456789':
+            self.toR = parseNum(toR[1:])
+        else:
+            self.toR = REG_KEY[toR.upper()[1:]]
+        
+        self.addr = node.children[1].text
+    
+    def toBasic(self):
+        return [BasicOp(self.fromR, self.toR, self.addr)]
+
+    def __str__(self):
+        addrStr = ""
+        if self.addr:
+            addrStr = f" with addr {self.addr}"
+        return f'Set register {self.toR} to register {self.fromR}{addrStr}'
+    def __repr__(self):
+        return f'<{self.__str__()}>'
+
+class ReadWriteAssgn(Node):
+    __slots__ = ['fromS', 'toR', 'addr']
+    typ = NodeTypes.READWRITE
+    def __init__(self, node, _):
+        c = node.children[0]
+        toR, _, fromS = (i.text for i in c.children[0].children)
+        if node.expr_name == 'ReadWriteFrom':
+            fromS, toR = toR, fromS
+        
+        self.toR = REG_KEY[toR.upper()[1:]]
+        typ = c.children[0].children[2].children[0].expr_name
+        if typ == 'num':
+            self.fromS = (parseNum(fromS), 'num')
+        else: # var
+            assert fromS in vars, f"Variable {fromS} does not exist in the current scope!"
+            self.fromS = (fromS, 'var')
+        
+        self.addr = node.children[1].text
+    
+    def toBasic(self):
+        return [BasicOp(-1, -1, -1)] # TODO
+
+    def __str__(self):
+        addrStr = ""
+        if self.addr:
+            addrStr = f" with addr {self.addr}"
+        return f'Set register {self.toR} to {self.fromS[0]}{addrStr}'
+    def __repr__(self):
+        return f'<{self.__str__()}>'
+
+class Assign(Node):
+    __slots__ = ['fromS', 'toS']
+    typ = NodeTypes.ASSIGN
+    def __init__(self, node, parents):
+        vars = [var for i in parents for var in i.vars]
+        for idx, n in enumerate(node.children):
+            if idx == 1:
+                continue
+            start = n.text
+            typ = n.children[0].expr_name
+            if typ == 'num':
+                end = (parseNum(start), 'num')
+            else: # var
+                assert start in vars, f"Variable {start} does not exist in the current scope!"
+                end = (start, 'var')
+            
+            if idx == 0:
+                self.toS = end
+            else:
+                self.fromS = end
+    
+    def toBasic(self):
+        return [BasicOp(-1, -1, -1)] # TODO
+
+    def __str__(self):
+        return f'Set {self.toS[0]} to {self.fromS[0]}'
+    def __repr__(self):
+        return f'<{self.toS[0]} = {self.fromS[0]}>'
+
+STATEMENT_PARSERS = {
+    'NOOP': NOOP,
+    'ReadWrite': ReadWrite,
+    'ReadWriteAssgn': ReadWriteAssgn,
+    'Assign': Assign,
 }
-def parseTree(node):
-    nme = node.expr_name
-    if nme in PARSERS:
-        return PARSERS[nme](node)
+def Statement(node, parents):
+    n = node.children[0]
+    nme = n.expr_name
+    if nme in STATEMENT_PARSERS:
+        return STATEMENT_PARSERS[nme](n, parents)
     else:
         raise ValueError(
-            f'Node with name "{nme}" should not be here! Node text: {node.text}'
+            f'Node with name "{nme}" should not be here! Node text: {n.text}'
         )
+
+
+class BaseParser(ABC):
+    __slots__ = []
+    @abstractmethod
+    def parseOp(op: BasicOp, parentLabel: Label):
+        pass
+
+    @abstractmethod
+    def parseLabels(parseds):
+        pass
+
+class ParseToArduino(BaseParser):
+    def parseOp(op: BasicOp, parentLabel: Label):
+        out = []
+        if op.read != -1:
+            out.append(f"setreadAddr({op.read});")
+        if op.write != -1:
+            out.append(f"setwriteAddr({op.write});")
+        if op.addr != -1:
+            out.append(f"writeAddr({op.addr})")
+        out.extend([
+            "Apply();",
+            "delay(waitTime);",
+            # "printData();",
+            "Reset();"
+        ])
+        return "    "+"\n    ".join(out)+"\n"
+
+    def parseLabels(parseds):
+        out = ['#include "base.h"\n#include "Code.h"']
+        for l, parsed in parseds.items():
+            nme = l.name
+            if nme in ('main_tick', 'main_init'):
+                raise ValueError(
+                    'Please do not name a label "main_tick" or "main_init"; instead, name them "loop" or "init".'
+                )
+            if nme == 'loop':
+                nme = 'main_tick'
+            elif nme == 'init':
+                nme = 'main_init'
+            out.append("void "+nme+"() {\n"+parsed+"}")
+        return "\n\n".join(out)+"\n"
+
 
 def printParsed(node, ind=0):
     spacing = '  '*ind
-    if node.children != []:
+    childr = getattr(node, 'children', [])
+    if childr != []:
         end = ":"
     else:
         end = ""
     print(spacing + str(node) + end)
-    for c in node.children:
+    for c in childr:
         printParsed(c, ind+1)
+
+def parseWithParser(labls, parser):
+    out = {}
+    for labl in labls:
+        out[labl] = "".join(parser.parseOp(i, labl) for i in labl.toBasic())
+    return parser.parseLabels(out)
 
 INLINE_COMMENT = r"#>(?:\\.|[^\\<\n]|<[^#\n])*?(?:<#|[<\\]?\n)"
 MULTILINE_COMMENT = r"#>>(?:\\.|[^\\<]|<(?!!<#))*?<<#"
@@ -62,10 +260,26 @@ def parse(fc):
     with open('lang') as f:
         g = Grammar(f.read())
     parsed = g.parse(fixed)
+
     assert parsed.expr_name == 'file'
-    parsedN = [parseTree(n) for n in parsed.children]
-    for n in parsedN:
-        printParsed(n)
+
+    parsedN = []
+    for n in parsed.children:
+        nme = n.expr_name
+        if nme == 'label_block':
+            parsedN.extend(Label(n, []).allLabls)
+        elif nme == 'statement':
+            raise ValueError(
+                f'Statements must be under a label! Statement text: {n.text}'
+            )
+        else:
+            raise ValueError(
+                f'Node with name "{nme}" should not be here! Node text: {n.text}'
+            )
+
+    for node in parsedN:
+        printParsed(node)
+
     return parsedN
 
 def main():
@@ -89,7 +303,10 @@ def main():
     with open(args.file) as f:
         fc = f.read()
     
-    parse(fc)
+    out = parse(fc)
+    outfc = parseWithParser(out, ParseToArduino)
+    with open('Code.cpp', 'w+') as f:
+        f.write(outfc)
 
 if __name__ == "__main__":
     main()

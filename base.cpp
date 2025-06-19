@@ -104,13 +104,6 @@ void printData() {
   Serial.println(getData());
 }
 
-void Execute() {
-  Apply();
-  delay(waitTime);
-  Reset();
-  delay(waitTime);
-}
-
 void Reset() {
   digitalWrite(Writing, HIGH);
   digitalWrite(Reading, HIGH);
