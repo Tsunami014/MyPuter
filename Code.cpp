@@ -1,29 +1,35 @@
 #include "base.h"
 #include "Code.h"
 
-void main_init() {
-  //AllUnitTests();
+uint8_t DA;
 
-  setwriteAddr(1);
-  writeData(2);
-  Execute();
-  setwriteAddr(2);
-  writeData(0);
-  Execute();
+void main_init() {
+    writeAddr(1);
+    Apply();
+    delay(waitTime);
+    DA = getData();
+    Reset();
+    writeData(DA);
+    setwriteAddr(1);
+    Apply();
+    delay(waitTime);
+    Reset();
 }
 
 void main_tick() {
-  setwriteAddr(0);
-  writeAddr(0b101001);
-  Execute();
-  setreadAddr(0);
-  setwriteAddr(3);
-  Apply();
-  delay(waitTime);
-  printData();
-  Reset();
-  delay(waitTime);
-  setreadAddr(0);
-  setwriteAddr(2);
-  Execute();
+    setwriteAddr(0);
+    writeAddr(0);
+    Apply();
+    delay(waitTime);
+    Reset();
+    setreadAddr(0);
+    setwriteAddr(3);
+    Apply();
+    delay(waitTime);
+    Reset();
+    setreadAddr(0);
+    setwriteAddr(1);
+    Apply();
+    delay(waitTime);
+    Reset();
 }

@@ -23,8 +23,8 @@ ReadWriteInto = register "<-" register
 ReadWriteAddr = "#" num
 
 ReadWriteAssgn = (ReadWriteFromAssgn / ReadWriteIntoAssgn) ReadWriteAddr?
-ReadWriteFromAssgn = (AssignOpts) "=>" register
-ReadWriteIntoAssgn = register "<=" (AssignOpts)
+ReadWriteFromAssgn = AssignOpts "=>" register
+ReadWriteIntoAssgn = register "<=" AssignOpts
 
 AssignOpts = (var / num)
 Assign = var "=" AssignOpts

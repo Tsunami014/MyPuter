@@ -5,7 +5,8 @@
             "type": "debugpy",
             "request": "launch",
             "program": "compile.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": ["-AO"]
         }
     ]
 }

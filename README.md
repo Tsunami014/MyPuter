@@ -52,10 +52,10 @@ You can also use instead:
 ##### Specifying registers
 **Both:**
 - `%NULL` - NOOP (will not do the reading/writing)
-**Read only:**
-- `%OUT` / `%O` - out register (read only; also automatically used when assigning with `=`)
-**Write only:**
-- `%A` / `%B` - the A or B registers (for the ALU)
+- `%RAM` - the RAM. Requires an address, otherwise it'll be quite funky.
+- `%DA` - the direct address register. Reads from the address (so set write device to `%NULL`), outputs to the data bus.
+- `%A` / `%B` - the A or B registers (for the ALU). *These will be read using a 2-step instruction*, using the ALU to take the value and store it in O and use O as the read address.
+- `%OUT` / `%O` - out register. When writing to, it uses the ALU output instead of whatever's on the data bus, so when writing to, use `%NULL` as read.
 **For pros only:** (keep in mind this will harm readability of code, so only use when necessary)
 - `%[num]` - the register at that read/write address
 
