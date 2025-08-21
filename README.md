@@ -6,13 +6,14 @@ Ensure you have `pip install parsimonious`
 # Tsunami (the programming language) documentation
 `.tn` files (TsuNami)
 ## Lines of code
-All statements separated by `;`, all number values specified as `<num>` and are either decimal (e.g. `123`), hex (e.g. `0x8D`) or decimal (e.g. `0b00110100`)
+All statements separated by `;`, all number values specified as `<num>` and are either decimal (e.g. `123`), hex (e.g. `0x8D` or `$8D`) or binary (e.g. `0b00110100` or `&00110100`)
 
 Opcodes are written as `SSSS M C`; S being the instruction, M being the mode and C being the carry bit (**if left out, the carry bit is `1`**).
 
 ### Order of operations quick reference
 This is when evaluating a function
-- Expressions
+- Expressions without brackets (e.g. `!var` as opposed to `{var1 + var2}`)
+- Other expressions
 - Invert
 - Decrement/increment
 - Operator
@@ -51,7 +52,6 @@ You can also use instead:
 `@<num>` (e.g. `@123`, `@0x7E`) to directly reference RAM values (instead of being hidden behind a name)
 ##### Specifying registers
 **Both:**
-- `%NULL` - NOOP (will not do the reading/writing)
 - `%RAM` - the RAM. Requires an address, otherwise it'll be quite funky.
 - `%DA` - the direct address register. Reads from the address (so set write device to `%NULL`), outputs to the data bus.
 - `%A` / `%B` - the A or B registers (for the ALU). *These will be read using a 2-step instruction*, using the ALU to take the value and store it in O and use O as the read address.
@@ -63,38 +63,46 @@ TODO:
 - Have stuff for the out register or dereferencing register
 
 #### Statements list
+- `[null]` = don't need to specify
 - `[num]` = number
 - `[var]` = variable
-- `[reg]` = register variable
+- `[reg]` = register
+- `[exp]` = expression without curly braces (just on outermost expression)
+TODO: Read register but with address
+
+| Name | Command | Description | Example |
+| -- | -- | -- | -- |
+| Noop | `NOOP` | Do nothing, just increment a CPU cycle | `NOOP;` |
+| ReadWrite | `[reg A]<-[num/var/exp/reg/null B]` or `[num/var/exp/reg/null B]->[reg A]` with optional `#[num C]` on end | Read value of B and store it in A, using an address value of C | `%A <- %B;`, `->%O #000000` |
+| Assign | `[var/reg A] = [num/var/exp/reg B]` | Read B and store it in A | `variable = 1;` |
+| Expression | `[exp]` | Run an expression. Get the result using the `%OUT` register. | `variable + 5;variable2 = %OUT` |
+
+**Notes for ReadWrite/Assign:**
+reading from A or B takes an extra cycle 
+TODO: It takes 3 instead of 2
+
+#### Expressions
+- `[num]` = number
+- `[var]` = variable
+- `[reg]` = register
 - `[exp]` = expression
 - `[op]` = operation (see operations below)
 
-| Name | Command | Description | Example | What it equates to |
-| -- | -- | -- | -- | -- |
-| Noop | `NOOP` | Do nothing, just increment a CPU cycle | `NOOP;` | N/A |
-| ReadWrite | `[reg A]<-[reg B]` or `[reg B]->[reg A]` with optional `#[num C]` | Read value of B and store it in A, using an address value of C | `%A <- %B;`, `%O<-%NULL #000000` | N/A |
-| ReadWrite assign | `[reg A]<=[num/var/exp B]` or `[num/var/exp B]=>[reg A]` with optional `#[num C]` | Read variable B and store it in register A, using an address value of C (for the setting to register A part) | `%A <= 1;` | Dependant on the type of B |
-| Assign | `[var A] = [num/var/exp B]` | Read variable B and store it in A | `variable = 1;` | Dependant on the type of A and B |
-| Operation | `[num/var A] [op] [num/var B]` | Read nums/vars A and B, store in registers A & B and perform ALU op on them (get output from `%OUT`) | `variable + 5;` | `%A<-[num/var A];%B<-[num/var B];%OUT<-%NULL#[opcode]` |
-| Assign with operation | `[var A] = [num/var B] [op] [num/var C]` | Read nums/vars B and C, store in registers A & B and perform ALU op on them to store the result in var A | `variable = variable2 + 5;` |  |
-| Increment | `[var]++` | Add 1 to var | `variable++;` | `%A<-[var];%OUT<-%NULL#[opcode for A plus 1; 0000 0 0]` |
-| Decrement | `[var]--` | Decrease 1 from var | `variable--;` | `%A<-[var];%OUT<-%NULL#[opcode for A minus 1; 1111 1]` |
-| Invert | `![var]` | Invert var | `!var;` | `%A<-[var];%OUT<-%NULL#[opcode for A plus 1; 0000 1]` |
-TODO: Bit shifting
-
-#### Expressions
-An expression is contained within curly braces `{}`.
-When used in place of a variable/number (expressions in expressions are handled separately), the out register is used.
+Note the curly brackets `{}` on the perform operations, but not on the others.
+When used in place of a variable/number/register (expressions in expressions are handled separately), the out register is used.
 
 Formats:
-| Format | Description | What it equates to |
+| Description | Format | What it equates to |
 | -- | -- | -- |
-| `{[num/var/exp A] [op] [num/var/exp B]}` | `%A<-[num/var/exp A];%B<-[num/var/exp B];%OUT<-%NULL#[opcode];` (if one is an expression; `[exp];%X<-%OUT` is used) |
+| Perform operations | `{[num/var/reg/exp A] [op] [num/var/reg/exp B]}` | `%A<-[num/var/exp A];%B<-[num/var/exp B];%OUT<-%NULL#[opcode];` (if one is an expression; `[exp];%X<-%OUT` is used) |
+| Increment | `[var/reg]++` | Add 1 to var | `variable++;` | `%A<-[var];%OUT<-%NULL#[opcode for A plus 1; 0000 0 0]` |
+| Decrement | `[var/reg]--` | Decrease 1 from var | `variable--;` | `%A<-[var];%OUT<-%NULL#[opcode for A minus 1; 1111 1]` |
+| Invert | `![var/reg]` | Invert var | `!var;` | `%A<-[var];%OUT<-%NULL#[opcode for not A; ]` |
 
 #### Operators
 ##### Things to remember
 - All spacing will be removed. So `A & !B` will be `A&!B`, using the `&!` operator.
-- `!!` will be reduced to nothing, `!!!` to `!`, etc.
+- `!!` will be reduced to nothing, `!!!` to `!`, `!!!!` to nothing, etc.
 - Nots will be checked if they can be combined with the operator; e.g. `!A & B` will be converted to `A !& B`
 ##### Table
 | Operator | Name | Selection & Mode |
@@ -110,9 +118,10 @@ Formats:
 | `&!` | A and not(B) | `0111 1` |
 | `^` | A xor B | `0110 1` |
 | `~^` | not(A xor B) | `1001 1` |
+TODO: Bit shifting
 
 #### Substitutions
-- Any equation using just numbers in brackets (e.g. `(0x32 + 123)`) will be converted before compiling.
+- Any equation using just numbers in regular brackets `()` (e.g. `(0x32 + 123)`) will be converted before compiling.
 
 ## Various bits and bobs
 - Comments: `#> inline comment <#` or `#> Comment to end of line` or `#>> Multiline inline comment <<#`

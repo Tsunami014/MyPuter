@@ -8,23 +8,22 @@ var = var_name / var_addr
 var_name = ~"[A-Z_][A-Z0-9_]*"i
 var_addr = "@" num
 
-special_regs = ~"O(UT)?"i / ~"[AB]"i / ~"NULL"i
+special_regs = ~"O(UT)?"i / ~"[AB]"i
 register = "%" (special_regs / num)
+NULL = ~"%NULL"i
 
-num = ~"[0-9]+" / ~"0x[0-9A-F]+"i / ~"0b[01]+"i
+num = ~"[0-9]+" / ~"(0x)|($)[0-9A-F]+"i / ~"(0b)|(&)[01]+"i
 
-statement = (NOOP / ReadWrite / ReadWriteAssgn / Assign) ";"
+statement = (NOOP / ReadWrite / Assign) ";"
 
 NOOP = "NOOP"
 
 ReadWrite = (ReadWriteFrom / ReadWriteInto) ReadWriteAddr?
-ReadWriteFrom = register "->" register
-ReadWriteInto = register "<-" register
+ReadWriteOps = AssignOpts / register / NULL
+ReadWriteFrom = ReadWriteOps "->" register
+ReadWriteInto = register "<-" ReadWriteOps
 ReadWriteAddr = "#" num
 
-ReadWriteAssgn = (ReadWriteFromAssgn / ReadWriteIntoAssgn) ReadWriteAddr?
-ReadWriteFromAssgn = AssignOpts "=>" register
-ReadWriteIntoAssgn = register "<=" AssignOpts
+AssignOpts = var / num
+Assign = (var / register) "=" AssignOpts
 
-AssignOpts = (var / num)
-Assign = var "=" AssignOpts

@@ -7,19 +7,33 @@ from enum import IntEnum
 from parsimonious.grammar import Grammar
 
 REG_KEY = {
-    "NULL": -1,
-    "O":   0,
-    "OUT": 0,
-    "A": 1,
-    "B": 2,
-    "RAM": 5, # TODO: add to actual device
+    "NULL": -1,# Do nothing
+    "O":   0,# Output from the ALU
+    "OUT": 0,# The same as before
+    "A": 1,  # Input 1 to the ALU
+    "B": 2,  # Input 2 to the ALU
+    "RAM": 4,# The RAM chip address
+    "X": 5,  # A simple register
     "DA": 6 # TODO: add to actual device
+    # Add an address to data (Direct Address) and data to address (Pointer/indexing? register)
 }
+
+# The list of registers for the arduino to fake the existance of. Only use ones in this list.
+FAKE = {
+    'DA': True
+}
+
+
+
 def parseNum(num):
     num = num.lower()
+    if num[0] == '$':
+        return int(num[1:], 16)
+    if num[0] == '&':
+        return int(num[1:], 2)
     if num[:2] == '0x':
         return int(num, 16)
-    elif num[:2] == '0b':
+    if num[:2] == '0b':
         return int(num, 2)
     return int(num)
 
@@ -89,125 +103,128 @@ class NOOP(Node):
         return '<NOOP>'
 
 class ReadWrite(Node):
-    __slots__ = ['fromR', 'toR', 'addr']
+    __slots__ = ['fromS', 'toS', 'addr']
     typ = NodeTypes.READWRITE
     def __init__(self, node, _):
         c = node.children[0]
-        toR, _, fromR = (i.text for i in c.children[0].children)
+        toN, _, fromN = c.children[0].children
         if node.expr_name == 'ReadWriteFrom':
-            fromR, toR = toR, fromR
+            fromN, toN = toN, fromN
         
-        if fromR[1] in '0123456789':
-            self.fromR = parseNum(fromR[1:])
-        else:
-            self.fromR = REG_KEY[fromR.upper()[1:]]
-        if toR[1] in '0123456789':
-            self.toR = parseNum(toR[1:])
-        else:
-            self.toR = REG_KEY[toR.upper()[1:]]
-        
+        for n, toV in (
+            (fromN, 'fromS'),
+            (toN, 'toS')
+        ):
+            typ = n.expr_name
+            if typ == 'ReadWriteOps':
+                typ = n.children[0].expr_name
+            if typ == 'AssignOpts':
+                typ = n.children[0].children[0].expr_name
+            self._handle(n.text, typ, toV)
+
         if node.children[1].text == '':
             self.addr = -1
         else:
             self.addr = parseNum(node.children[1].text[1:])
-    
-    def toBasic(self):
-        if self.fromR == REG_KEY['A']:
-            return [BasicOp(-1, REG_KEY['OUT'], 0b11111), BasicOp(REG_KEY['OUT'], self.toR, self.addr)] # If reading from A, write to out using ALU instruction 'output A', then use the out register for reading
-        if self.fromR == REG_KEY['B']:
-            return [BasicOp(-1, REG_KEY['OUT'], 0b10101), BasicOp(REG_KEY['OUT'], self.toR, self.addr)] # Same with B
-        return [BasicOp(self.fromR, self.toR, self.addr)]
 
-    def __str__(self):
-        addrStr = ""
-        if self.addr != -1:
-            addrStr = f" with addr {self.addr}"
-        return f'Set register {self.toR} to register {self.fromR}{addrStr}'
-    def __repr__(self):
-        return f'<{self.__str__()}>'
-
-class ReadWriteAssgn(Node):
-    __slots__ = ['fromS', 'toR', 'addr']
-    typ = NodeTypes.READWRITE
-    def __init__(self, node, _):
-        c = node.children[0]
-        toR, _, fromS = (i.text for i in c.children[0].children)
-        if node.expr_name == 'ReadWriteFrom':
-            fromS, toR = toR, fromS
-        
-        self.toR = REG_KEY[toR.upper()[1:]]
-        typ = c.children[0].children[2].children[0].expr_name
+    def _handle(self, txt, typ, toV):
         if typ == 'num':
-            self.fromS = (parseNum(fromS), 'num')
-        else: # var
-            if fromS[0] == '@':
-                self.fromS = (parseNum(fromS[1:]), 'addr')
+            out = (parseNum(txt), 'num')
+        elif typ == 'NULL':
+            out = (None, 'null')
+        elif typ == 'register':
+            if txt[1] in '0123456789':
+                out = (parseNum(txt[1:]), 'reg')
             else:
-                assert fromS in vars, f"Variable {fromS} does not exist in the current scope!"
-                raise NotImplementedError('No variables allowed yet :(')
-        
-        if node.children[1].text == '':
-            self.addr = -1
-        else:
-            self.addr = parseNum(node.children[1].text[1:])
+                if txt[1:] not in REG_KEY:
+                    raise ValueError(
+                        f'Register {txt} not found!'
+                    )
+                out = (REG_KEY[txt[1:]], 'reg')
+        elif typ == 'var':
+            if txt[0] == '@':
+                out = (parseNum(txt[1:]), 'ram')
+            else:
+                raise NotImplementedError('Variables not supported yet!')
+                #out = (Variables_to_addrs[txt], 'ram')
+        setattr(self, toV, out)
     
     def toBasic(self):
-        if self.addr == -1:
-            if self.fromS[1] == 'addr':
-                return [BasicOp(self.fromS[0], self.toR, self.addr)]
-            else: # num
-                return [BasicOp(-1, REG_KEY['DA'], self.fromS[0]), BasicOp(REG_KEY['DA'], self.toR, self.addr)]
-        raise NotImplementedError(
-            "Cannot use address in => yet, sry"
-        ) # TODO: This
+        s = []
+        addr = None
+        if self.fromS[1] == 'null':
+            rd = -1
+        elif self.fromS[1] == 'num':
+            s = [BasicOp(-1, REG_KEY['DA'], self.fromS[0])]
+            rd = REG_KEY['DA']
+        elif self.fromS[1] == 'reg':
+            if self.fromS[0] == REG_KEY['A']:
+                rd = REG_KEY['OUT']
+                s = [BasicOp(-1, REG_KEY['OUT'], 0b11111)] # If reading from A, write to out using ALU instruction 'output A', then use the out register for reading
+            elif self.fromS[0] == REG_KEY['B']:
+                rd = REG_KEY['OUT']
+                s = [BasicOp(-1, REG_KEY['OUT'], 0b10101)] # Same with B
+            else:
+                rd = self.fromS[0]
+        elif self.fromS[1] == 'ram':
+            addr = self.fromS[0]
+            rd = REG_KEY['RAM']
+        else:
+            raise ValueError(
+                f'FromS type not found: "{self.fromS[1]}"'
+            )
+
+        addr2 = None
+        if self.toS[1] == 'null':
+            wr = -1
+        elif self.toS[1] == 'reg':
+            wr = self.toS[0]
+        elif self.toS[1] == 'ram':
+            wr = REG_KEY['RAM']
+            addr2 = self.toS[0]
+        else:
+            raise ValueError(
+                f'ToS type not found: "{self.toS[1]}"'
+            )
+        if addr is not None and self.addr is not None:
+            raise ValueError(
+                f'Address specified in this instruction "{self.addr}" conflicts with instruction which requires an address of {addr}. Please remove the address from this instruction.'
+            )
+        addr2 = (addr2 if addr2 is not None else self.addr) # The output addr is whatever is set; as now, only one can be
+        if addr is not None and addr2 is not None:
+            return s + [BasicOp(rd, REG_KEY['A'], addr), BasicOp(REG_KEY['A'], wr, addr2)]
+        # HACK: This relies heavily on the address being used for the correct purpose.
+        #       If the address is set due to an instruction, it *may* be right. If it's set by the dev, it may/may not be right, depending on how good the programmer is.
+        return s + [BasicOp(rd, wr, (addr if addr is not None else addr2))]
 
     def __str__(self):
         addrStr = ""
         if self.addr != -1:
-            addrStr = f" with addr {self.addr}"
-        return f'Set register {self.toR} to {"@" if self.fromS[1] == "addr" else ""}{self.fromS[0]}{addrStr}'
+            addrbin = "{0:b}".format(self.addr).rjust(8, "0")
+            addrStr = f" with addr {self.addr} ({addrbin})"
+        return f'Set {self.toS[1]} {self.toS[0]} to {self.fromS[1]} {self.fromS[0]}{addrStr}'
     def __repr__(self):
         return f'<{self.__str__()}>'
 
-class Assign(Node):
-    __slots__ = ['fromA', 'toA']
-    typ = NodeTypes.ASSIGN
-    def __init__(self, node, parents):
-        raise NotImplementedError("Not implemented") # TODO: Fix this class
-        vars = [var for i in parents for var in i.vars]
-        for idx, n in enumerate(node.children):
-            if idx == 1:
-                continue
-            start = n.text
+class Assign(ReadWrite):
+    def __init__(self, node, _):
+        toN, _, fromN = node.children
+        if node.expr_name == 'ReadWriteFrom':
+            fromN, toN = toN, fromN
+        
+        for n, toV in (
+            (fromN, 'fromS'),
+            (toN, 'toS')
+        ):
             typ = n.children[0].expr_name
-            if typ == 'num':
-                end = parseNum(start)
-            else: # var
-                if start[0] == '@':
-                    end = parseNum(start[1:])
-                else:
-                    assert start in vars, f"Variable {start} does not exist in the current scope!"
-                    raise NotImplementedError('No variables allowed yet :(')
-            
-            if idx == 0:
-                self.toA = end
-            else:
-                self.fromA = end
-    
-    def toBasic(self):
-        # Set A to contents of register at specified address, output A to the out register through the ALU, then read from that to write to the other RAM address
-        # Maybe TODO: add another register to make this 2 steps instead of 3
-        return [BasicOp(REG_KEY['RAM'], REG_KEY['A'], self.fromA), BasicOp(-1, REG_KEY['OUT'], 0b11111), BasicOp(REG_KEY['OUT'], REG_KEY['RAM'], self.toA)]
+            self._handle(n.text, typ, toV)
 
-    def __str__(self):
-        return f'Set @{self.toA} to @{self.fromA}'
-    def __repr__(self):
-        return f'<@{self.toA} = @{self.fromA}>'
+        self.addr = -1
+
 
 STATEMENT_PARSERS = {
     'NOOP': NOOP,
     'ReadWrite': ReadWrite,
-    'ReadWriteAssgn': ReadWriteAssgn,
     'Assign': Assign,
 }
 def Statement(node, parents):
@@ -224,20 +241,20 @@ def Statement(node, parents):
 class BaseParser(ABC):
     __slots__ = []
     @abstractmethod
-    def parseOp(op: BasicOp, parentLabel: Label, args: argparse.Namespace):
+    def parseOp(op: BasicOp, parentLabel: Label):
         pass
 
     @abstractmethod
-    def parseLabels(parseds, args: argparse.Namespace):
+    def parseLabels(parseds):
         pass
 
 class ParseToArduino(BaseParser):
-    def parseOp(op: BasicOp, parentLabel: Label, args: argparse.Namespace):
+    def parseOp(op: BasicOp, parentLabel: Label):
         out = []
         read = op.read != -1
         write = op.write != -1
         writeTo = None
-        if args.arduino_optimise:
+        if FAKE['DA']:
             if op.read == REG_KEY['DA']:
                 if op.write == REG_KEY['DA']:
                     raise ValueError(
@@ -270,9 +287,13 @@ class ParseToArduino(BaseParser):
             ])
         return "    "+"\n    ".join(out)+"\n"
 
-    def parseLabels(parseds, args: argparse.Namespace):
-        out = ['#include "base.h"\n#include "Code.h"']
-        if args.arduino_optimise:
+    def parseLabels(parseds):
+        out = ["""
+// This file was autogenerated by `compile.py` and will be overwritten on subsequent runs.
+#include "base.h"
+#include "Code.h"
+"""[1:-1]]
+        if FAKE['DA']:
             out.append("uint8_t DA;")
         for l, parsed in parseds.items():
             nme = l.name
@@ -297,11 +318,11 @@ def printParsed(node, ind=0):
     for c in childr:
         printParsed(c, ind+1)
 
-def parseWithParser(labls, parser, args):
+def parseWithParser(labls, parser):
     out = {}
     for labl in labls:
-        out[labl] = "".join(parser.parseOp(i, labl, args) for i in labl.toBasic())
-    return parser.parseLabels(out, args)
+        out[labl] = "".join(parser.parseOp(i, labl) for i in labl.toBasic())
+    return parser.parseLabels(out)
 
 INLINE_COMMENT = r"#>(?:\\.|[^\\<\n]|<[^#\n])*?(?:<#|[<\\]?\n)"
 MULTILINE_COMMENT = r"#>>(?:\\.|[^\\<]|<(?!!<#))*?<<#"
@@ -342,19 +363,13 @@ def main():
         help="Path to the file to compile (default: ./code/main.tn)"
     )
 
-    parser.add_argument(
-        '-AO', '--arduino-optimise',
-        action='store_true',
-        help="Use the arduino for storing RAM and the direct address instead of the actual chips."
-    )
-
     args = parser.parse_args()
 
     with open(args.file) as f:
         fc = f.read()
     
     out = parse(fc)
-    outfc = parseWithParser(out, ParseToArduino, args)
+    outfc = parseWithParser(out, ParseToArduino)
     with open('Code.cpp', 'w+') as f:
         f.write(outfc)
 
