@@ -40,8 +40,9 @@ def parseNum(num):
 class NodeTypes(IntEnum):
     LABEL = -1
     NOOP = 0
-    READWRITE = 1
-    ASSIGN = 2
+    DEBUG = 1
+    READWRITE = 2
+    ASSIGN = 3
 
 
 @dataclass(slots=True)
@@ -49,14 +50,19 @@ class BasicOp:
     read: int
     write: int
     addr: int
+    debug: bool = False
 
 class Node(ABC):
     __slots__ = ['typ']
     typ: NodeTypes
+    isDebug: bool = False
 
     @abstractmethod
     def toBasic(self) -> list[BasicOp]:
         pass
+
+    def __repr__(self):
+        return f'<{self.__str__()}>'
 
 class Label(Node):
     __slots__ = ['name', 'children', 'vars', 'allLabls']
@@ -99,8 +105,51 @@ class NOOP(Node):
         return [BasicOp(-1, -1, -1)]
     def __str__(self):
         return 'NOOP'
-    def __repr__(self):
-        return '<NOOP>'
+
+class Debug(Node):
+    __slots__ = ['reg', 'addr']
+    typ = NodeTypes.DEBUG
+    isDebug = True
+    def __init__(self, node, _):
+        n = node.children[1].children[0]
+        txt = n.text
+        if n.expr_name == 'register':
+            if txt[1] in '0123456789':
+                self.reg = (parseNum(txt[1:]), 'reg')
+            else:
+                if txt[1:] not in REG_KEY:
+                    raise ValueError(
+                        f'Register {txt} not found!'
+                    )
+                self.reg = (REG_KEY[txt[1:]], 'reg')
+        elif n.expr_name == 'var':
+            if txt[0] == '@':
+                self.reg = (parseNum(txt[1:]), 'ram')
+            else:
+                raise NotImplementedError('Variables not supported yet!')
+
+        txt2 = node.children[2].text
+        if txt2 == '':
+            self.addr = -1
+        else:
+            if self.reg[1] == 'ram':
+                raise ValueError(
+                    'Cannot have an address while using ram!'
+                )
+            self.addr = parseNum(txt2[1:])
+    def toBasic(self):
+        if self.reg[1] == 'ram':
+            return [BasicOp(REG_KEY['RAM'], -1, self.reg[0], True)]
+        else:  # reg
+            return [BasicOp(self.reg[0], -1, self.addr, True)]
+    def __str__(self):
+        if self.addr != -1:
+            addrbin = "{0:b}".format(self.addr).rjust(8, "0")
+            addrStr = f" with addr {self.addr} ({addrbin})"
+        else:
+            addrStr = ""
+        return f'Debug print {self.reg[1]} {self.reg[0]}{addrStr}'
+
 
 class ReadWrite(Node):
     __slots__ = ['fromS', 'toS', 'addr']
@@ -198,13 +247,12 @@ class ReadWrite(Node):
         return s + [BasicOp(rd, wr, (addr if addr is not None else addr2))]
 
     def __str__(self):
-        addrStr = ""
         if self.addr != -1:
             addrbin = "{0:b}".format(self.addr).rjust(8, "0")
             addrStr = f" with addr {self.addr} ({addrbin})"
+        else:
+            addrStr = ""
         return f'Set {self.toS[1]} {self.toS[0]} to {self.fromS[1]} {self.fromS[0]}{addrStr}'
-    def __repr__(self):
-        return f'<{self.__str__()}>'
 
 class Assign(ReadWrite):
     def __init__(self, node, _):
@@ -224,6 +272,7 @@ class Assign(ReadWrite):
 
 STATEMENT_PARSERS = {
     'NOOP': NOOP,
+    'Debug': Debug,
     'ReadWrite': ReadWrite,
     'Assign': Assign,
 }
@@ -240,6 +289,7 @@ def Statement(node, parents):
 
 class BaseParser(ABC):
     __slots__ = []
+    allowDebug = False  # Whether it should try to parse debugging operations
     @abstractmethod
     def parseOp(op: BasicOp, parentLabel: Label):
         pass
@@ -249,6 +299,7 @@ class BaseParser(ABC):
         pass
 
 class ParseToArduino(BaseParser):
+    allowDebug = True
     def parseOp(op: BasicOp, parentLabel: Label):
         out = []
         read = op.read != -1
@@ -271,20 +322,15 @@ class ParseToArduino(BaseParser):
             out.append(f"setwriteAddr({op.write});")
         if op.addr != -1:
             out.append(f"writeAddr({op.addr});")
-        if writeTo is None:
-            out.extend([
-                "Apply();",
-                "delay(waitTime);",
-                # "printData();",
-                "Reset();"
-            ])
-        else:
-            out.extend([
-                "Apply();",
-                "delay(waitTime);",
-                writeTo + " = getData();",
-                "Reset();"
-            ])
+        out.extend([
+            "Apply();",
+            "delay(waitTime);",
+        ])
+        if op.debug:
+            out.append("printData();")
+        if writeTo is not None:
+            out.append(writeTo + " = getData();")
+        out.append("Reset();")
         return "    "+"\n    ".join(out)+"\n"
 
     def parseLabels(parseds):
@@ -318,10 +364,10 @@ def printParsed(node, ind=0):
     for c in childr:
         printParsed(c, ind+1)
 
-def parseWithParser(labls, parser):
+def parseWithParser(labls, parser: BaseParser):
     out = {}
     for labl in labls:
-        out[labl] = "".join(parser.parseOp(i, labl) for i in labl.toBasic())
+        out[labl] = "".join(parser.parseOp(i, labl) for i in labl.toBasic() if (parser.allowDebug or (not i.isDebug)))
     return parser.parseLabels(out)
 
 INLINE_COMMENT = r"#>(?:\\.|[^\\<\n]|<[^#\n])*?(?:<#|[<\\]?\n)"

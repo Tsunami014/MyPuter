@@ -34,6 +34,11 @@ void main_tick() {
     delay(waitTime);
     Reset();
     setreadAddr(0);
+    Apply();
+    delay(waitTime);
+    printData();
+    Reset();
+    setreadAddr(0);
     setwriteAddr(3);
     Apply();
     delay(waitTime);

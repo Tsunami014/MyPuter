@@ -14,9 +14,10 @@ NULL = ~"%NULL"i
 
 num = ~"[0-9]+" / ~"(0x)|($)[0-9A-F]+"i / ~"(0b)|(&)[01]+"i
 
-statement = (NOOP / ReadWrite / Assign) ";"
+statement = (NOOP / Debug / ReadWrite / Assign) ";"
 
 NOOP = "NOOP"
+Debug = "{" (var / register) ReadWriteAddr? "}"
 
 ReadWrite = (ReadWriteFrom / ReadWriteInto) ReadWriteAddr?
 ReadWriteOps = AssignOpts / register / NULL

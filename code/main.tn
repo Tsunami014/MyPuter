@@ -4,6 +4,7 @@ init:
 END;
 loop:
     %O <- %NULL #&001001;
+    {%O};
     %3 <- %O;
     %A <- %O;
 END;
