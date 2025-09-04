@@ -1,25 +1,25 @@
 init:
-    %A = 1;
-    %B = 3;
+  %A = 2;
+  %B = 2;
+  %O <- %NULL #&101001;
+  {%O};
+  %3 <- %O;
+  %A <- %O;
 END;
 loop:
-    %O <- %NULL #&001001;
-    {%O};
-    %3 <- %O;
-    %A <- %O;
 END;
 
 #>>
 test:
-    [var1]
-    [var2]
-    NOOP;
-    var1 = 3;
-    test2:
-        [var3]
-        var3 = var1;
-    END; #> test2
-    var2 = var1;
+  [var1]
+  [var2]
+  NOOP;
+  var1 = 3;
+  test2:
+    [var3]
+    var3 = var1;
+  END; #> test2
+  var2 = var1;
 
 END; #> test
 <<#

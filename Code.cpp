@@ -5,31 +5,26 @@
 uint8_t DA;
 
 void main_init() {
-    writeAddr(1);
+    DA = 2;
     Apply();
     delay(waitTime);
-    DA = getData();
     Reset();
     writeData(DA);
     setwriteAddr(1);
     Apply();
     delay(waitTime);
     Reset();
-    writeAddr(3);
+    DA = 2;
     Apply();
     delay(waitTime);
-    DA = getData();
     Reset();
     writeData(DA);
     setwriteAddr(2);
     Apply();
     delay(waitTime);
     Reset();
-}
-
-void main_tick() {
     setwriteAddr(0);
-    writeAddr(9);
+    writeAddr(0b101001);
     Apply();
     delay(waitTime);
     Reset();
@@ -48,4 +43,7 @@ void main_tick() {
     Apply();
     delay(waitTime);
     Reset();
+}
+
+void main_tick() {
 }

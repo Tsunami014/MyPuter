@@ -304,7 +304,7 @@ class ParseToArduino(BaseParser):
         out = []
         read = op.read != -1
         write = op.write != -1
-        writeTo = None
+        addr = op.addr != -1
         if FAKE['DA']:
             if op.read == REG_KEY['DA']:
                 if op.write == REG_KEY['DA']:
@@ -314,22 +314,21 @@ class ParseToArduino(BaseParser):
                 out.append("writeData(DA);")
                 read = False
             if op.write == REG_KEY['DA']:
-                writeTo = 'DA'
                 write = False
+                addr = False
+                out.append(f"DA = {op.addr};")
         if read:
             out.append(f"setreadAddr({op.read});")
         if write:
             out.append(f"setwriteAddr({op.write});")
-        if op.addr != -1:
-            out.append(f"writeAddr({op.addr});")
+        if addr:
+            out.append("writeAddr(0b{0:b});".format(op.addr))
         out.extend([
             "Apply();",
             "delay(waitTime);",
         ])
         if op.debug:
             out.append("printData();")
-        if writeTo is not None:
-            out.append(writeTo + " = getData();")
         out.append("Reset();")
         return "    "+"\n    ".join(out)+"\n"
 
